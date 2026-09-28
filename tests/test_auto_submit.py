@@ -419,3 +419,49 @@ def test_cpio(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "cpio-dir"
     assert (target / "file1").exists()
     assert (target / "subdir" / "file2").exists()
+
+
+def test_replace_node_modules_handling(
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: pathlib.Path,
+) -> None:
+    caplog.set_level(logging.INFO)
+
+    specfile = tmp_path / "openQA.spec"
+    content = """
+Source0:        %{name}-%{version}.tar.xz
+Source1:        openQA-rpmlintrc
+Source2:        node_modules.spec.inc
+%include        %{_sourcedir}/node_modules.spec.inc
+BuildRequires:  fdupes
+"""
+    specfile.write_text(content)
+    expected = """
+Source0:        %{name}-%{version}.tar.xz
+Source1:        openQA-rpmlintrc
+#!CreateArchive
+Source10:       node_modules.tar.gz
+BuildRequires:  fdupes
+"""
+
+    auto_submit.replace_node_modules_handling(specfile)
+
+    assert specfile.read_text() == expected
+    assert caplog.records[0].getMessage() == "Successfully updated openQA.spec"
+
+    caplog.clear()
+
+    content = """
+Source0:        %{name}-%{version}.tar.xz
+Source1:        openQA-rpmlintrc
+BuildRequires:  fdupes
+"""
+    specfile.write_text(content)
+    expected = content
+
+    auto_submit.replace_node_modules_handling(specfile)
+
+    assert specfile.read_text() == expected
+    assert (
+        caplog.records[0].getMessage() == "openQA.spec does not contain node_modules specific sources; no changes made."
+    )

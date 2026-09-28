@@ -229,6 +229,24 @@ def extract_obscpio(archive: pathlib.Path, target_dir: pathlib.Path) -> None:
         raise
 
 
+def replace_node_modules_handling(file: pathlib.Path) -> None:
+    content = file.read_text(encoding="utf-8")
+
+    pattern = (
+        r"Source2:\s*node_modules\.spec\.inc\n"
+        r"%include\s*%\{_sourcedir\}/node_modules\.spec\.inc"
+    )
+    replacement = "#!CreateArchive\nSource10:       node_modules.tar.gz"
+
+    new_content, count = re.subn(pattern, replacement, content)
+
+    if count > 0:
+        file.write_text(new_content, encoding="utf-8")
+        log.info("Successfully updated %s", file.name)
+    else:
+        log.info("%s does not contain node_modules specific sources; no changes made.", file.name)
+
+
 @dataclass
 class AutoSubmitter:
     """Automate the preparation and submission of packages."""
@@ -369,7 +387,7 @@ class AutoSubmitter:
                 return ""
         return forked_repo
 
-    def _prepare_local_clone(self, package: str, branch: str) -> None:
+    def _prepare_local_clone(self, package: str, branch: str) -> None:  # ruff: ignore[complex-structure]
         """Prepare local clone with files from original directory."""
         git_cmd = shlex.split(self.git_cmd_str)
         # "parent" remote is added by git-obs; fetch before switch because the
@@ -399,6 +417,11 @@ class AutoSubmitter:
             for item in source_dir.iterdir():
                 if item.name == "node_modules.obscpio":
                     extract_obscpio(item, target_dir=pathlib.Path() / "node_modules")
+                elif item.name.endswith(".spec"):
+                    shutil.copy2(item, ".")
+                    replace_node_modules_handling(pathlib.Path(item.name))
+                elif item.name == "node_modules.spec.inc":
+                    pass
                 elif item.is_file():
                     shutil.copy2(item, ".")
                 elif item.is_dir() and item.name not in {".osc", ".git"}:
